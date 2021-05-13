@@ -66,6 +66,7 @@ PyTorch Colab notebook: [CycleGAN](https://colab.research.google.com/github/mit-
   cp SPADE/data/cityscapes_dataset.py gan-compression-for-mit/data/cityscapes_dataset.py
   cp SPADE/data/coco_dataset.py gan-compression-for-mit/data/coco_dataset.py
   cp SPADE/datasets/coco_generate_instance_map.py gan-compression-for-mit/datasets/coco_generate_instance_map.py
+  cp SPADE/models/pix2pix_model.py gan-compression-for-mit/models/spade_model.py
   cp SPADE/models/pix2pix_model.py gan-compression-for-mit/models/modules/spade_modules/spade_model_modules.py
   cp SPADE/models/networks/generator.py gan-compression-for-mit/models/modules/spade_architecture/spade_generator.py
   cp SPADE/models/networks/generator.py gan-compression-for-mit/models/modules/spade_architecture/mobile_spade_generator.py
@@ -77,7 +78,6 @@ PyTorch Colab notebook: [CycleGAN](https://colab.research.google.com/github/mit-
   # apply the patch directly
   cd gan-compression-for-mit
   git apply patch.patch
-  
   ```
 
   
