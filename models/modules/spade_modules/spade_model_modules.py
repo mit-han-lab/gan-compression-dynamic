@@ -1,117 +1,221 @@
-import copy
-import os
+"""
+Copyright (C) 2019 NVIDIA Corporation.  All rights reserved.
+Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
+"""
 
 import torch
-from torch import nn
-from torchprofile import profile_macs
-
-from models import networks
-from models.modules.loss import GANLoss, VGGLoss
-from utils import util
+import models.networks as networks
+import util.util as util
 
 
-class SPADEModelModules(nn.Module):
+class Pix2PixModel(torch.nn.Module):
+    @staticmethod
+    def modify_commandline_options(parser, is_train):
+        networks.modify_commandline_options(parser, is_train)
+        return parser
+
     def __init__(self, opt):
-        opt = copy.deepcopy(opt)
-        if len(opt.gpu_ids) > 0:
-            opt.gpu_ids = opt.gpu_ids[:1]
-        self.gpu_ids = opt.gpu_ids
-        super(SPADEModelModules, self).__init__()
+        super().__init__()
         self.opt = opt
-        self.model_names = ['G']
-        self.visual_names = ['labels', 'fake_B', 'real_B']
-        self.netG = networks.define_G(opt.netG, init_type=opt.init_type,
-                                      init_gain=opt.init_gain, gpu_ids=self.gpu_ids, opt=opt)
-        if opt.isTrain:
-            self.model_names.append('D')
-            self.netD = networks.define_D(opt.netD, init_type=opt.init_type,
-                                          init_gain=opt.init_gain, gpu_ids=self.gpu_ids, opt=opt)
-            self.criterionGAN = GANLoss(opt.gan_mode)
-            self.criterionFeat = nn.L1Loss()
-            self.criterionVGG = VGGLoss()
-            self.optimizers = []
-            self.loss_names = ['G_gan', 'G_feat', 'G_vgg', 'D_real', 'D_fake']
-        else:
-            self.netG.eval()
-        self.config = None
+        self.FloatTensor = torch.cuda.FloatTensor if self.use_gpu() \
+            else torch.FloatTensor
+        self.ByteTensor = torch.cuda.ByteTensor if self.use_gpu() \
+            else torch.ByteTensor
 
-    def create_optimizers(self):
-        if self.opt.no_TTUR:
-            beta1, beta2 = self.opt.beta1, self.opt.beta2
-            G_lr, D_lr = self.opt.lr, self.opt.lr
+        self.netG, self.netD, self.netE = self.initialize_networks(opt)
+
+        # set loss functions
+        if opt.isTrain:
+            self.criterionGAN = networks.GANLoss(
+                opt.gan_mode, tensor=self.FloatTensor, opt=self.opt)
+            self.criterionFeat = torch.nn.L1Loss()
+            if not opt.no_vgg_loss:
+                self.criterionVGG = networks.VGGLoss(self.opt.gpu_ids)
+            if opt.use_vae:
+                self.KLDLoss = networks.KLDLoss()
+
+    # Entry point for all calls involving forward pass
+    # of deep networks. We used this approach since DataParallel module
+    # can't parallelize custom functions, we branch to different
+    # routines based on |mode|.
+    def forward(self, data, mode):
+        input_semantics, real_image = self.preprocess_input(data)
+
+        if mode == 'generator':
+            g_loss, generated = self.compute_generator_loss(
+                input_semantics, real_image)
+            return g_loss, generated
+        elif mode == 'discriminator':
+            d_loss = self.compute_discriminator_loss(
+                input_semantics, real_image)
+            return d_loss
+        elif mode == 'encode_only':
+            z, mu, logvar = self.encode_z(real_image)
+            return mu, logvar
+        elif mode == 'inference':
+            with torch.no_grad():
+                fake_image, _ = self.generate_fake(input_semantics, real_image)
+            return fake_image
         else:
-            beta1, beta2 = 0, 0.9
-            G_lr, D_lr = self.opt.lr / 2, self.opt.lr * 2
-        optimizer_G = torch.optim.Adam(list(self.netG.parameters()), lr=G_lr, betas=(beta1, beta2))
-        optimizer_D = torch.optim.Adam(list(self.netD.parameters()), lr=D_lr, betas=(beta1, beta2))
+            raise ValueError("|mode| is invalid")
+
+    def create_optimizers(self, opt):
+        G_params = list(self.netG.parameters())
+        if opt.use_vae:
+            G_params += list(self.netE.parameters())
+        if opt.isTrain:
+            D_params = list(self.netD.parameters())
+
+        beta1, beta2 = opt.beta1, opt.beta2
+        if opt.no_TTUR:
+            G_lr, D_lr = opt.lr, opt.lr
+        else:
+            G_lr, D_lr = opt.lr / 2, opt.lr * 2
+
+        optimizer_G = torch.optim.Adam(G_params, lr=G_lr, betas=(beta1, beta2))
+        optimizer_D = torch.optim.Adam(D_params, lr=D_lr, betas=(beta1, beta2))
+
         return optimizer_G, optimizer_D
 
-    def forward(self, input_semantics, real_B=None, mode='generate_fake'):
+    def save(self, epoch):
+        util.save_network(self.netG, 'G', epoch, self.opt)
+        util.save_network(self.netD, 'D', epoch, self.opt)
+        if self.opt.use_vae:
+            util.save_network(self.netE, 'E', epoch, self.opt)
 
-        if self.config is not None:
-            self.netG.config = self.config
-        if mode == 'generate_fake':
-            fake_B = self.netG(input_semantics)
-            return fake_B
-        elif mode == 'G_loss':
-            assert real_B is not None
-            return self.compute_G_loss(input_semantics, real_B)
-        elif mode == 'D_loss':
-            assert real_B is not None
-            return self.compute_D_loss(input_semantics, real_B)
-        elif mode == 'calibrate':
-            with torch.no_grad():
-                self.netG(input_semantics)
-        else:
-            raise NotImplementedError('Unknown forward mode [%s]!!!' % mode)
+    ############################################################################
+    # Private helper methods
+    ############################################################################
 
-    def profile(self, input_semantics):
-        netG = self.netG
-        if isinstance(netG, nn.DataParallel):
-            netG = netG.module
-        if self.config is not None:
-            netG.config = self.config
+    def initialize_networks(self, opt):
+        netG = networks.define_G(opt)
+        netD = networks.define_D(opt) if opt.isTrain else None
+        netE = networks.define_E(opt) if opt.use_vae else None
+
+        if not opt.isTrain or opt.continue_train:
+            netG = util.load_network(netG, 'G', opt.which_epoch, opt)
+            if opt.isTrain:
+                netD = util.load_network(netD, 'D', opt.which_epoch, opt)
+            if opt.use_vae:
+                netE = util.load_network(netE, 'E', opt.which_epoch, opt)
+
+        return netG, netD, netE
+
+    # preprocess the input, such as moving the tensors to GPUs and
+    # transforming the label map to one-hot encoding
+    # |data|: dictionary of the input data
+
+    def preprocess_input(self, data):
+        # move to GPU and change data types
+        data['label'] = data['label'].long()
+        if self.use_gpu():
+            data['label'] = data['label'].cuda()
+            data['instance'] = data['instance'].cuda()
+            data['image'] = data['image'].cuda()
+
+        # create one-hot label map
+        label_map = data['label']
+        bs, _, h, w = label_map.size()
+        nc = self.opt.label_nc + 1 if self.opt.contain_dontcare_label \
+            else self.opt.label_nc
+        input_label = self.FloatTensor(bs, nc, h, w).zero_()
+        input_semantics = input_label.scatter_(1, label_map, 1.0)
+
+        # concatenate instance map if it exists
+        if not self.opt.no_instance:
+            inst_map = data['instance']
+            instance_edge_map = self.get_edges(inst_map)
+            input_semantics = torch.cat((input_semantics, instance_edge_map), dim=1)
+
+        return input_semantics, data['image']
+
+    def compute_generator_loss(self, input_semantics, real_image):
+        G_losses = {}
+
+        fake_image, KLD_loss = self.generate_fake(
+            input_semantics, real_image, compute_kld_loss=self.opt.use_vae)
+
+        if self.opt.use_vae:
+            G_losses['KLD'] = KLD_loss
+
+        pred_fake, pred_real = self.discriminate(
+            input_semantics, fake_image, real_image)
+
+        G_losses['GAN'] = self.criterionGAN(pred_fake, True,
+                                            for_discriminator=False)
+
+        if not self.opt.no_ganFeat_loss:
+            num_D = len(pred_fake)
+            GAN_Feat_loss = self.FloatTensor(1).fill_(0)
+            for i in range(num_D):  # for each discriminator
+                # last output is the final prediction, so we exclude it
+                num_intermediate_outputs = len(pred_fake[i]) - 1
+                for j in range(num_intermediate_outputs):  # for each layer output
+                    unweighted_loss = self.criterionFeat(
+                        pred_fake[i][j], pred_real[i][j].detach())
+                    GAN_Feat_loss += unweighted_loss * self.opt.lambda_feat / num_D
+            G_losses['GAN_Feat'] = GAN_Feat_loss
+
+        if not self.opt.no_vgg_loss:
+            G_losses['VGG'] = self.criterionVGG(fake_image, real_image) \
+                * self.opt.lambda_vgg
+
+        return G_losses, fake_image
+
+    def compute_discriminator_loss(self, input_semantics, real_image):
+        D_losses = {}
         with torch.no_grad():
-            macs = profile_macs(netG, (input_semantics,))
-        params = 0
-        for p in netG.parameters():
-            params += p.numel()
-        return macs, params
+            fake_image, _ = self.generate_fake(input_semantics, real_image)
+            fake_image = fake_image.detach()
+            fake_image.requires_grad_()
 
-    def compute_G_loss(self, input_semantics, real_B):
-        fake_B = self.netG(input_semantics)
-        pred_fake, pred_real = self.discriminate(input_semantics, fake_B, real_B)
-        loss_G_gan = self.criterionGAN(pred_fake, True, for_discriminator=False) * self.opt.lambda_gan
-        num_D = len(pred_fake)
-        loss_G_feat = 0
-        for i in range(num_D):
-            num_intermediate_outputs = len(pred_fake[i]) - 1
-            for j in range(num_intermediate_outputs):  # for each layer output
-                unweighted_loss = self.criterionFeat(
-                    pred_fake[i][j], pred_real[i][j].detach())
-                loss_G_feat += unweighted_loss * self.opt.lambda_feat / num_D
-        loss_G_vgg = self.criterionVGG(fake_B, real_B) * self.opt.lambda_vgg
-        loss_G = loss_G_gan + loss_G_feat + loss_G_vgg
-        losses = {'loss_G': loss_G, 'G_gan': loss_G_gan,
-                  'G_feat': loss_G_feat, 'G_vgg': loss_G_vgg}
-        return losses
+        pred_fake, pred_real = self.discriminate(
+            input_semantics, fake_image, real_image)
 
-    def compute_D_loss(self, input_semantics, real_B):
-        with torch.no_grad():
-            fake_B = self.netG(input_semantics)
-        pred_fake, pred_real = self.discriminate(input_semantics, fake_B, real_B)
-        loss_D_fake = self.criterionGAN(pred_fake, False, for_discriminator=True)
-        loss_D_real = self.criterionGAN(pred_real, True, for_discriminator=True)
-        loss_D = loss_D_fake + loss_D_real
-        losses = {'loss_D': loss_D, 'D_fake': loss_D_fake, 'D_real': loss_D_real}
-        return losses
+        D_losses['D_Fake'] = self.criterionGAN(pred_fake, False,
+                                               for_discriminator=True)
+        D_losses['D_real'] = self.criterionGAN(pred_real, True,
+                                               for_discriminator=True)
 
-    def discriminate(self, input_semantics, fake_B, real_B):
-        fake_concat = torch.cat([input_semantics, fake_B], dim=1)
-        real_concat = torch.cat([input_semantics, real_B], dim=1)
+        return D_losses
+
+    def encode_z(self, real_image):
+        mu, logvar = self.netE(real_image)
+        z = self.reparameterize(mu, logvar)
+        return z, mu, logvar
+
+    def generate_fake(self, input_semantics, real_image, compute_kld_loss=False):
+        z = None
+        KLD_loss = None
+        if self.opt.use_vae:
+            z, mu, logvar = self.encode_z(real_image)
+            if compute_kld_loss:
+                KLD_loss = self.KLDLoss(mu, logvar) * self.opt.lambda_kld
+
+        fake_image = self.netG(input_semantics, z=z)
+
+        assert (not compute_kld_loss) or self.opt.use_vae, \
+            "You cannot compute KLD loss if opt.use_vae == False"
+
+        return fake_image, KLD_loss
+
+    # Given fake and real image, return the prediction of discriminator
+    # for each fake and real image.
+
+    def discriminate(self, input_semantics, fake_image, real_image):
+        fake_concat = torch.cat([input_semantics, fake_image], dim=1)
+        real_concat = torch.cat([input_semantics, real_image], dim=1)
+
+        # In Batch Normalization, the fake and real images are
+        # recommended to be in the same batch to avoid disparate
+        # statistics in fake and real images.
+        # So both fake and real images are fed to D all at once.
         fake_and_real = torch.cat([fake_concat, real_concat], dim=0)
+
         discriminator_out = self.netD(fake_and_real)
+
         pred_fake, pred_real = self.divide_pred(discriminator_out)
+
         return pred_fake, pred_real
 
     # Take the prediction of fake and real images from the combined batch
@@ -130,21 +234,18 @@ class SPADEModelModules(nn.Module):
 
         return fake, real
 
-    def load_networks(self, verbose=True):
-        for name in self.model_names:
-            net = getattr(self, 'net' + name, None)
-            path = getattr(self.opt, 'restore_%s_path' % name, None)
-            if path is not None:
-                util.load_network(net, path, verbose)
+    def get_edges(self, t):
+        edge = self.ByteTensor(t.size()).zero_()
+        edge[:, :, :, 1:] = edge[:, :, :, 1:] | (t[:, :, :, 1:] != t[:, :, :, :-1])
+        edge[:, :, :, :-1] = edge[:, :, :, :-1] | (t[:, :, :, 1:] != t[:, :, :, :-1])
+        edge[:, :, 1:, :] = edge[:, :, 1:, :] | (t[:, :, 1:, :] != t[:, :, :-1, :])
+        edge[:, :, :-1, :] = edge[:, :, :-1, :] | (t[:, :, 1:, :] != t[:, :, :-1, :])
+        return edge.float()
 
-    def save_networks(self, epoch, save_dir):
-        for name in self.model_names:
-            if isinstance(name, str):
-                save_filename = '%s_net_%s.pth' % (epoch, name)
-                save_path = os.path.join(save_dir, save_filename)
-                net = getattr(self, 'net' + name)
-                if len(self.gpu_ids) > 0 and torch.cuda.is_available():
-                    torch.save(net.cpu().state_dict(), save_path)
-                    net.cuda(self.gpu_ids[0])
-                else:
-                    torch.save(net.cpu().state_dict(), save_path)
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return eps.mul(std) + mu
+
+    def use_gpu(self):
+        return len(self.opt.gpu_ids) > 0

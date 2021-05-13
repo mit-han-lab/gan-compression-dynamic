@@ -3,13 +3,11 @@ Copyright (C) 2019 NVIDIA Corporation.  All rights reserved.
 Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 """
 
-import argparse
 import os
-
+import argparse
+from pycocotools.coco import COCO
 import numpy as np
 import skimage.io as io
-import tqdm
-from pycocotools.coco import COCO
 from skimage.draw import polygon
 
 parser = argparse.ArgumentParser()
@@ -19,8 +17,8 @@ parser.add_argument('--input_label_dir', type=str, default="./train_label/",
                     help="Path to the directory containing label maps. It can be downloaded at http://calvin.inf.ed.ac.uk/wp-content/uploads/data/cocostuffdataset/stuffthingmaps_trainval2017.zip")
 parser.add_argument('--output_instance_dir', type=str, default="./train_inst/",
                     help="Path to the output directory of instance maps")
+
 opt = parser.parse_args()
-os.makedirs(opt.output_instance_dir, exist_ok=True)
 
 print("annotation file at {}".format(opt.annotation_file))
 print("input label maps at {}".format(opt.input_label_dir))
@@ -29,17 +27,18 @@ print("output dir at {}".format(opt.output_instance_dir))
 # initialize COCO api for instance annotations
 coco = COCO(opt.annotation_file)
 
+
 # display COCO categories and supercategories
 cats = coco.loadCats(coco.getCatIds())
 imgIds = coco.getImgIds(catIds=coco.getCatIds(cats))
-for ix, id in enumerate(tqdm.tqdm(imgIds)):
-    # if ix % 50 == 0:
-    #     print("{} / {}".format(ix, len(imgIds)))
+for ix, id in enumerate(imgIds):
+    if ix % 50 == 0:
+        print("{} / {}".format(ix, len(imgIds)))
     img_dict = coco.loadImgs(id)[0]
     filename = img_dict["file_name"].replace("jpg", "png")
     label_name = os.path.join(opt.input_label_dir, filename)
     inst_name = os.path.join(opt.output_instance_dir, filename)
-    img = io.imread(label_name, as_gray=True)
+    img = io.imread(label_name, as_grey=True)
 
     annIds = coco.getAnnIds(imgIds=id, catIds=[], iscrowd=None)
     anns = coco.loadAnns(annIds)
