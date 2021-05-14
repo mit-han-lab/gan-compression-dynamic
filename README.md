@@ -45,8 +45,8 @@ PyTorch Colab notebook: [CycleGAN](https://colab.research.google.com/github/mit-
 - Clone this repo:
 
   ```shell
-  git clone git@github.com:lmxyy/gan-compression-for-mit.git
-  cd gan-compression-for-mit
+  git clone git@github.com:mit-han-lab/gan-compression-mit.git
+  cd gan-compression-mit
   ```
 
 - Install [PyTorch](https://pytorch.org) 1.4 and other dependencies (e.g., torchvision).
@@ -62,21 +62,21 @@ PyTorch Colab notebook: [CycleGAN](https://colab.research.google.com/github/mit-
   git clone https://github.com/NVlabs/SPADE.git
   
   # copy some related files
-  cp SPADE/data/pix2pix_dataset.py gan-compression-for-mit/data/spade_dataset.py
-  cp SPADE/data/cityscapes_dataset.py gan-compression-for-mit/data/cityscapes_dataset.py
-  cp SPADE/data/coco_dataset.py gan-compression-for-mit/data/coco_dataset.py
-  cp SPADE/datasets/coco_generate_instance_map.py gan-compression-for-mit/datasets/coco_generate_instance_map.py
-  cp SPADE/models/pix2pix_model.py gan-compression-for-mit/models/spade_model.py
-  cp SPADE/models/pix2pix_model.py gan-compression-for-mit/models/modules/spade_modules/spade_model_modules.py
-  cp SPADE/models/networks/generator.py gan-compression-for-mit/models/modules/spade_architecture/spade_generator.py
-  cp SPADE/models/networks/generator.py gan-compression-for-mit/models/modules/spade_architecture/mobile_spade_generator.py
-  cp SPADE/models/networks/generator.py gan-compression-for-mit/models/modules/spade_architecture/super_mobile_spade_generator.py
-  cp SPADE/models/networks/generator.py gan-compression-for-mit/models/modules/spade_architecture/sub_mobile_spade_generator.py
-  cp SPADE/models/networks/normalization.py gan-compression-for-mit/models/modules/spade_architecture/normalization.py
-  cp MUNIT/networks.py gan-compression-for-mit/models/modules/munit_architecture/munit_generator.py
+  cp SPADE/data/pix2pix_dataset.py gan-compression-mit/data/spade_dataset.py
+  cp SPADE/data/cityscapes_dataset.py gan-compression-mit/data/cityscapes_dataset.py
+  cp SPADE/data/coco_dataset.py gan-compression-mit/data/coco_dataset.py
+  cp SPADE/datasets/coco_generate_instance_map.py gan-compression-mit/datasets/coco_generate_instance_map.py
+  cp SPADE/models/pix2pix_model.py gan-compression-mit/models/spade_model.py
+  cp SPADE/models/pix2pix_model.py gan-compression-mit/models/modules/spade_modules/spade_model_modules.py
+  cp SPADE/models/networks/generator.py gan-compression-mit/models/modules/spade_architecture/spade_generator.py
+  cp SPADE/models/networks/generator.py gan-compression-mit/models/modules/spade_architecture/mobile_spade_generator.py
+  cp SPADE/models/networks/generator.py gan-compression-mit/models/modules/spade_architecture/super_mobile_spade_generator.py
+  cp SPADE/models/networks/generator.py gan-compression-mit/models/modules/spade_architecture/sub_mobile_spade_generator.py
+  cp SPADE/models/networks/normalization.py gan-compression-mit/models/modules/spade_architecture/normalization.py
+  cp MUNIT/networks.py gan-compression-mit/models/modules/munit_architecture/munit_generator.py
   
   # apply the patch directly
-  cd gan-compression-for-mit
+  cd gan-compression-mit
   git apply patch.patch
   ```
 
