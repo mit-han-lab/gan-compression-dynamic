@@ -1,10 +1,6 @@
 # GAN Compression
 ### [project](https://hanlab.mit.edu/projects/gancompression/) | [paper](https://arxiv.org/abs/2003.08936) | [videos](https://www.youtube.com/playlist?list=PL80kAHvQbh-r5R8UmXhQK1ndqRvPNw_ex) | [slides](https://hanlab.mit.edu/projects/gancompression/resources/546-slides.pdf) 
 
-**[NEW!]** Add support to the [MUNIT](https://github.com/NVlabs/MUNIT), a multimodal unsupervised image-to-image translation approach! Please follow the [test commands](#munit) to test the pre-trained models and the [tutorial](docs/tutorials/fast_gan_compression.md) to train your own models!
-
-**[NEW!]** The [arXiv v3](https://arxiv.org/abs/2003.08936) is released! We introduce an improved pipeline, [Fast GAN Compression](docs/tutorials/fast_gan_compression.md), which could produce comparable results as GAN Compression with much simpler procedures!
-
 ![teaser](imgs/teaser.png)
 *We introduce GAN Compression, a general-purpose method for compressing conditional GANs. Our method reduces the computation of widely-used conditional GAN models, including pix2pix, CycleGAN, and GauGAN, by 9-21x while preserving the visual fidelity. Our method is effective for a wide range of generator architectures, learning objectives, and both paired and unpaired settings.*
 
@@ -13,7 +9,49 @@ GAN Compression: Efficient Architectures for Interactive Conditional GANs<br>
 MIT, Adobe Research, SJTU<br>
 In CVPR 2020.  
 
+## Usage
+
+3rd party code is dynamically linked in this repo. Users are free to obtain the 3rd party code on their own.
+
+- Clone this repo:
+
+  ```shell
+  git clone git@github.com:mit-han-lab/gan-compression-dynamic.git
+  cd gan-compression-dynamic
+  ```
+  
+- Apply the patch for the SPADE and MUNIT model:
+
+  ```bash
+  cd ..
+  git clone https://github.com/NVlabs/MUNIT.git
+  git clone https://github.com/NVlabs/SPADE.git
+  
+  # copy some related files
+  cp SPADE/data/pix2pix_dataset.py gan-compression-dynamic/data/spade_dataset.py
+  cp SPADE/data/cityscapes_dataset.py gan-compression-dynamic/data/cityscapes_dataset.py
+  cp SPADE/data/coco_dataset.py gan-compression-dynamic/data/coco_dataset.py
+  cp SPADE/datasets/coco_generate_instance_map.py gan-compression-dynamic/datasets/coco_generate_instance_map.py
+  cp SPADE/models/pix2pix_model.py gan-compression-dynamic/models/spade_model.py
+  cp SPADE/models/pix2pix_model.py gan-compression-dynamic/models/modules/spade_modules/spade_model_modules.py
+  cp SPADE/models/networks/generator.py gan-compression-dynamic/models/modules/spade_architecture/spade_generator.py
+  cp SPADE/models/networks/generator.py gan-compression-dynamic/models/modules/spade_architecture/mobile_spade_generator.py
+  cp SPADE/models/networks/generator.py gan-compression-dynamic/models/modules/spade_architecture/super_mobile_spade_generator.py
+  cp SPADE/models/networks/generator.py gan-compression-dynamic/models/modules/spade_architecture/sub_mobile_spade_generator.py
+  cp SPADE/models/networks/normalization.py gan-compression-dynamic/models/modules/spade_architecture/normalization.py
+  cp MUNIT/networks.py gan-compression-dynamic/models/modules/munit_architecture/munit_generator.py
+  
+  # apply the patch directly
+  cd gan-compression-dynamic
+  git apply patch.patch
+  ```
+
+- Install [PyTorch](https://pytorch.org) 1.4 and other dependencies (e.g., torchvision).
+
+  - For pip users, please type the command `pip install -r requirements.txt`.
+  - For Conda users, we provide an installation script `scripts/conda_deps.sh`. Alternatively, you can create a new Conda environment using `conda env create -f environment.yml`.
 ## Demos
+
 <p align="center">
   <img src="imgs/demo_xavier.gif" width=600>
 </p>
@@ -40,47 +78,6 @@ PyTorch Colab notebook: [CycleGAN](https://colab.research.google.com/github/mit-
 
 ## Getting Started
 
-### Installation
-
-- Clone this repo:
-
-  ```shell
-  git clone git@github.com:mit-han-lab/gan-compression-mit.git
-  cd gan-compression-mit
-  ```
-
-- Install [PyTorch](https://pytorch.org) 1.4 and other dependencies (e.g., torchvision).
-
-  - For pip users, please type the command `pip install -r requirements.txt`.
-  - For Conda users, we provide an installation script `scripts/conda_deps.sh`. Alternatively, you can create a new Conda environment using `conda env create -f environment.yml`.
-  
-- Apply the patch for the SPADE and MUNIT model (due to some license issue, we could not release the code directly):
-
-  ```bash
-  cd ..
-  git clone https://github.com/NVlabs/MUNIT.git
-  git clone https://github.com/NVlabs/SPADE.git
-  
-  # copy some related files
-  cp SPADE/data/pix2pix_dataset.py gan-compression-mit/data/spade_dataset.py
-  cp SPADE/data/cityscapes_dataset.py gan-compression-mit/data/cityscapes_dataset.py
-  cp SPADE/data/coco_dataset.py gan-compression-mit/data/coco_dataset.py
-  cp SPADE/datasets/coco_generate_instance_map.py gan-compression-mit/datasets/coco_generate_instance_map.py
-  cp SPADE/models/pix2pix_model.py gan-compression-mit/models/spade_model.py
-  cp SPADE/models/pix2pix_model.py gan-compression-mit/models/modules/spade_modules/spade_model_modules.py
-  cp SPADE/models/networks/generator.py gan-compression-mit/models/modules/spade_architecture/spade_generator.py
-  cp SPADE/models/networks/generator.py gan-compression-mit/models/modules/spade_architecture/mobile_spade_generator.py
-  cp SPADE/models/networks/generator.py gan-compression-mit/models/modules/spade_architecture/super_mobile_spade_generator.py
-  cp SPADE/models/networks/generator.py gan-compression-mit/models/modules/spade_architecture/sub_mobile_spade_generator.py
-  cp SPADE/models/networks/normalization.py gan-compression-mit/models/modules/spade_architecture/normalization.py
-  cp MUNIT/networks.py gan-compression-mit/models/modules/munit_architecture/munit_generator.py
-  
-  # apply the patch directly
-  cd gan-compression-mit
-  git apply patch.patch
-  ```
-
-  
 
 ### CycleGAN
 
